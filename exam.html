@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCQ Question Viewer</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- pdf.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .header-title {
+            animation: fadeInDown 1s ease-in-out;
+            color: #1e3a8a;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            animation: slideInUp 0.8s ease-in-out;
+        }
+        .question-container {
+            margin-bottom: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: #ffffff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease;
+        }
+        .question-container:hover {
+            transform: translateY(-5px);
+        }
+        .question-text {
+            font-weight: 500;
+            color: #1e3a8a;
+        }
+        .option {
+            margin: 5px 0;
+            color: #343a40;
+        }
+        .correct-answer {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #155724;
+            background-color: #d4edda;
+            padding: 8px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        .btn-primary {
+            background-color: #2563eb;
+            border: none;
+            transition: transform 0.2s ease, background-color 0.2s ease;
+        }
+        .btn-primary:hover {
+            background-color: #1e40af;
+            transform: scale(1.05);
+        }
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container my-5">
+        <h1 class="header-title text-center mb-4">MCQ Question Viewer</h1>
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Upload Question Bank PDF</h5>
+                <p class="card-text">Upload a PDF file containing MCQs in the format: <br>
+                    Q1. Question text? a) Option1 b) Option2 c) Option3 d) Option4 Correct: b</p>
+                <div class="input-group mb-3">
+                    <input type="file" id="pdfUpload" class="form-control" accept="application/pdf">
+                    <button class="btn btn-primary" type="button" id="submitBtn" disabled>Submit</button>
+                </div>
+            </div>
+        </div>
+        <div id="examContainer" class="mt-4"></div>
+    </div>
+
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Configure pdf.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        const pdfUpload = document.getElementById('pdfUpload');
+        const submitBtn = document.getElementById('submitBtn');
+
+        pdfUpload.addEventListener('change', () => {
+            submitBtn.disabled = !pdfUpload.files.length;
+        });
+
+        submitBtn.addEventListener('click', handleFileUpload);
+
+        async function handleFileUpload() {
+            const file = pdfUpload.files[0];
+            if (!file) return;
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                let fullText = '';
+
+                // Extract text from all pages
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+                }
+
+                // Parse questions from text
+                const questions = parseQuestions(fullText);
+                displayExam(questions);
+            } catch (error) {
+                console.error('Error processing PDF:', error);
+                alert('Failed to process the PDF. Please ensure it is in the correct format.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit';
+            }
+        }
+
+        function parseQuestions(text) {
+            const questions = [];
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+            let currentQuestion = null;
+
+            for (const line of lines) {
+                // Match question (e.g., Q1. What is...? )
+                if (line.match(/^Q\d+\./)) {
+                    if (currentQuestion) questions.push(currentQuestion);
+                    currentQuestion = {
+                        number: line.match(/^Q(\d+)\./)[1],
+                        text: line.replace(/^Q\d+\.\s*/, '').trim(),
+                        options: [],
+                        correct: ''
+                    };
+                }
+                // Match options (e.g., a) Option1)
+                else if (line.match(/^[a-d]\)/)) {
+                    if (currentQuestion) {
+                        currentQuestion.options.push(line.trim());
+                    }
+                }
+                // Match correct answer (e.g., Correct: b)
+                else if (line.match(/^Correct:/)) {
+                    if (currentQuestion) {
+                        currentQuestion.correct = line.replace(/^Correct:\s*/, '').trim();
+                    }
+                }
+            }
+            if (currentQuestion) questions.push(currentQuestion);
+            return questions;
+        }
+
+        function displayExam(questions) {
+            const examContainer = document.getElementById('examContainer');
+            examContainer.innerHTML = '';
+
+            questions.forEach((q, index) => {
+                // Find the correct option text
+                const correctOption = q.options.find(opt => opt.startsWith(q.correct + ')'));
+                const correctText = correctOption ? correctOption.replace(/^[a-d]\)\s*/, '').trim() : q.correct;
+
+                const questionDiv = document.createElement('div');
+                questionDiv.className = 'question-container';
+                questionDiv.innerHTML = `
+                    <div class="question-text">Q${q.number}: ${q.text}</div>
+                    <div class="options">
+                        ${q.options.map(opt => `<div class="option">${opt}</div>`).join('')}
+                    </div>
+                    <div class="correct-answer">Correct Answer: ${q.correct}) ${correctText}</div>
+                `;
+                examContainer.appendChild(questionDiv);
+            });
+        }
+    </script>
+</body>
+</html>
